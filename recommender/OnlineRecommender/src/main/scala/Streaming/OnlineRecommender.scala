@@ -12,23 +12,23 @@ import redis.clients.jedis.Jedis
 
 case class MongoConfig(uri:String, db:String)
 
-// 定义一个基准推荐对象
+// Define a standard Recommendation case class
 case class Recommendation(mid: Int, score: Double)
 
-// 定义基于LMF电影特征向量的电影相似度列表
+// Define List of movie similarities based on LMF movie feature vectors
 case class MovieRecs(mid: Int, recs: Seq[Recommendation])
 
-// 定义基于预测评分的用户推荐列表
+// Define List of user recommendations based on predicted ratings
 case class UserRecs(uid: Int, recs: Seq[Recommendation])
 
-// 定义连接助手
+// Define connection helper
 object ConnHelper extends Serializable{
   lazy val jedis = new Jedis("localhost")
   lazy val mongoClient = MongoClient(MongoClientURI("mongodb://localhost:27017/recommender"))
 }
 
 object OnlineRecommender {
-  // 定义表名
+  // Define table names
   val MAX_USER_RATINGS_NUM = 20
   val MAX_SIM_MOVIES_NUM = 20
   val MONGODB_STREAM_RECS_COLLECTION = "StreamRecs"
@@ -43,13 +43,13 @@ object OnlineRecommender {
       "kafka.topic" -> "recommender"
     )
 
-    // 创建一个sparkConf
+    // Create a sparkConf
     val sparkConf = new SparkConf().setMaster(config("spark.cores")).setAppName("OnlineRecommender")
 
-    // 创建一个SparkSession
+    // Create a SparkSession
     val spark = SparkSession.builder().config(sparkConf).getOrCreate()
 
-    // 拿到streaming context
+    // Get streaming context
     val sc = spark.sparkContext
     val ssc = new StreamingContext(sc, Seconds(2)) // batch duration
 
@@ -57,7 +57,7 @@ object OnlineRecommender {
 
     implicit val mongoConfig = MongoConfig(config("mongo.uri"), config("mongo.db"))
 
-    // 加载电影相似度矩阵数据，广播出去
+    // Load the movie similarity matrix data and broadcast it
     val simMovieMatrix = spark.read
       .option("uri", mongoConfig.uri)
       .option("collection", MONGODB_MOVIE_RECS_COLLECTION)
@@ -65,13 +65,13 @@ object OnlineRecommender {
       .load()
       .as[MovieRecs]
       .rdd
-      .map { movieRecs => // 为了查询相似度方便，转换为map
+      .map { movieRecs => // For the convenience of query similarity, convert to map
         (movieRecs.mid, movieRecs.recs.map(x => (x.mid, x.score)).toMap)
       }.collectAsMap()
 
     val simMovieMatrixBroadCast = sc.broadcast(simMovieMatrix)
 
-    // 定义kafka连接参数
+    // Define kafka connection parameters
     val kafkaParam = Map(
       "bootstrap.servers" -> "localhost:9092",
       "key.deserializer" -> classOf[StringDeserializer],
@@ -80,41 +80,41 @@ object OnlineRecommender {
       "auto.offset.reset" -> "latest"
     )
 
-    // 通过kafka创建一个DStream
+    // Create a DStream through kafka
     val kafkaStream = KafkaUtils.createDirectStream[String, String](ssc,
       LocationStrategies.PreferConsistent,
       ConsumerStrategies.Subscribe[String, String](Array(config("kafka.topic")), kafkaParam)
     )
 
-    // 把原始数据转换成评分流 UID|MID|SCORE|TIMESTAMP
+    // Convert raw data into scoring stream UID|MID|SCORE|TIMESTAMP
     val ratingStream = kafkaStream.map{
       msg =>
         val attr = msg.value().split("\\|")
         (attr(0).toInt, attr(1).toInt, attr(2).toDouble, attr(3).toInt)
     }
 
-    // 继续做流式处理，核心实时算法部分
+    // Continue to do stream processing, the core real-time algorithm part
     ratingStream.foreachRDD{
       rdds => rdds.foreach{
         case (uid, mid, score, timestamp) =>{
           println("rating data is coming! >>>>>>>>>>>>>>>>")
 
-          // 1. 从redis里获取当前用户最近的K次评分，保存成Array[(mid, score)]
+          // 1. Get the latest K ratings of the current user from redis and save them as an Array[(mid, score)]
           val userRecentlyRatings = getUserRecentlyRating(MAX_USER_RATINGS_NUM, uid, ConnHelper.jedis)
 
-          // 2. 从相似度矩阵中取出当前电影最相似的N个电影，作为备选列表，Array[mid]
+          // 2. Take out the most similar N movies to the current movie from the similarity matrix as a candidate list, Array[mid]
           val candidateMovies = getTopSimMovies(MAX_SIM_MOVIES_NUM, mid, uid, simMovieMatrixBroadCast.value)
 
-          // 3. 对每个备选电影计算推荐优先级，得到当前用户的实时推荐列表，Array[(mid, score)]
+          // 3. Calculate the recommendation priority for each candidate movie, and get the real-time recommendation list of the current user, Array[(mid, score)]
           val streamRecs = computeMovieScores(candidateMovies, userRecentlyRatings, simMovieMatrixBroadCast.value)
 
-          // 4. 把推荐数据保存到mongodb
+          // 4. Save recommendation data to mongodb
           saveDataToMongoDB(uid, streamRecs)
         }
       }
     }
 
-    // 开始接收和处理数据
+    // Start receiving and processing data
     ssc.start()
 
     println(">>>>>>>>>>>>>>>>>> streaming started!")
@@ -122,33 +122,33 @@ object OnlineRecommender {
     ssc.awaitTermination()
   }
 
-  // redis操作返回的是java类，为了使用map操作需要引入转换类
+  // The redis operation returns the java class, and the conversion class needs to be used in order to use the map operation
   import scala.collection.JavaConversions._
   def getUserRecentlyRating(num: Int, uid: Int, jedis: Jedis): Array[(Int, Double)] = {
-    // 从redis读取数据，用户评分数据保存在 uid:UID为key的队列里，value是MID:SCORE
+    // Read data from redis, user rating data is stored in the queue with uid:UID as key, and value is MID:SCORE
     jedis.lrange("uid:" + uid, 0, num - 1)
       .map{
-        item => // 具体每个评分又是以冒号分隔的两个值
+        item => // Specifically, each score has two values, separated by colons
           val attr = item.split("\\:")
           (attr(0).trim.toInt, attr(1).trim.toDouble)
       }.toArray
   }
 
   /**
-   * 获取跟当前电影做相似的num个电影，作为备选电影
+   * Get num movies similar to the current movie as alternative movies
    *
-   * @param num       相似电影的数量
-   * @param mid       当前电影ID
-   * @param uid       当前评分用户ID
-   * @param simMovies 相似度矩阵
-   * @return 过滤之后的备选电影列表
+   * @param num       Number of similar movies
+   * @param mid       Current Movie ID
+   * @param uid       Current rating userID
+   * @param simMovies Similarity matrix
+   * @return Filtered list of alternative movies
    */
   def getTopSimMovies(num: Int, mid: Int, uid: Int, simMovies: scala.collection.Map[Int, scala.collection.immutable.Map[Int, Double]])
                      (implicit mongoConfig: MongoConfig): Array[Int] = {
-    // 1. 从相似度矩阵中拿到所有相似的电影
+    // 1. Get all similar movies from the similarity matrix
     val allSimMovies = simMovies(mid).toArray
 
-    // 2. 从mongodb中查询用户已看过的电影
+    // 2. Query the movies that the user has watched from mongodb
     val ratingExist = ConnHelper.mongoClient(mongoConfig.db)(MONGODB_RATING_COLLECTION)
       .find(MongoDBObject("uid" -> uid))
       .toArray
@@ -156,7 +156,7 @@ object OnlineRecommender {
         item => item.get("mid").toString.toInt
       }
 
-    // 3. 把看过的过滤，得到输出列表
+    // 3. Filter out those the user has seen to get the output list
     allSimMovies.filter(x => ! ratingExist.contains(x._1))
       .sortWith(_._2 > _._2)
       .take(num)
@@ -166,19 +166,19 @@ object OnlineRecommender {
   def computeMovieScores(candidateMovies: Array[Int],
                          userRecentlyRatings: Array[(Int, Double)],
                          simMovies: scala.collection.Map[Int, scala.collection.immutable.Map[Int, Double]]): Array[(Int, Double)] = {
-    // 定义一个ArrayBuffer用于保存每一个备选电影的基础得分
+    // Define an ArrayBuffer to save the basic score of each candidate movie
     val scores = scala.collection.mutable.ArrayBuffer[(Int, Double)]()
 
-    // 定义一个HashMap，保存每一个备选电影的增强减弱因子（偏移项）
+    // Define a HashMap to save the enhancement and weakening factors (offset items) of each candidate movie
     val increMap = scala.collection.mutable.HashMap[Int, Int]()
     val decreMap = scala.collection.mutable.HashMap[Int, Int]()
 
     for(candidateMovie <- candidateMovies; userRecentlyRating <- userRecentlyRatings){
-      // 拿到备选电影和最近评分电影的相似度
+      // Get the similarity between the candidate movie and the most recently rated movie
       val simScore = getMoviesSimScore(candidateMovie, userRecentlyRating._1, simMovies)
 
       if(simScore > 0.7){
-        // 计算备选电影的基础推荐得分
+        // Calculate the base recommendation score for candidate movies
         scores += ((candidateMovie, simScore * userRecentlyRating._2))
         if(userRecentlyRating._2 > 3){
           increMap(candidateMovie) = increMap.getOrDefault(candidateMovie, 0) + 1
@@ -187,15 +187,15 @@ object OnlineRecommender {
         }
       }
     }
-    // 根据备选电影的mid做groupby，根据公式求最终的推荐评分
+    // Do groupby according to the mid of the candidate movie, and calculate the final recommendation score with the formula
     scores.groupBy(_._1).map{
-      // groupBy之后得到的数据是Map(mid -> ArrayBuffer[(mid, score)])
+      // groupBy and get Map(mid -> ArrayBuffer[(mid, score)])
       case(mid, scoreList) =>
         (mid, scoreList.map(_._2).sum / scoreList.length + log(increMap.getOrDefault(mid, 1)) - log(decreMap.getOrDefault(mid, 1)))
     }.toArray.sortWith(_._2>_._2)
   }
 
-  // 获取两个电影之间的相似度
+  // Get the similarity between two movies
   def getMoviesSimScore(mid1: Int, mid2: Int, simMovies: scala.collection.Map[Int, scala.collection.immutable.Map[Int, Double]]): Double ={
     simMovies.get(mid1) match {
       case Some(sims) => sims.get(mid2) match {
@@ -206,19 +206,19 @@ object OnlineRecommender {
     }
   }
 
-  // 求一个数的对数，底数默认为10
+  // Find the logarithm of a number, the base is 10 by default
   def log(m: Int): Double ={
     val N = 10
     math.log(m) / math.log(N)
   }
 
   def saveDataToMongoDB(uid: Int, streamRecs: Array[(Int, Double)])(implicit mongoConfig: MongoConfig): Unit = {
-    // 定义到StreamRecs表的连接
+    // Define a join to the StreamRecs table
     val streamRecsCollection = ConnHelper.mongoClient(mongoConfig.db)(MONGODB_STREAM_RECS_COLLECTION)
 
-    // 如果表中已有uid对应的数据，则删除
+    // If there is already data corresponding to uid in the table, delete it
     streamRecsCollection.findAndRemove(MongoDBObject("uid" -> uid))
-    // 将streamRecs数据存入表中
+    // Store streamRecs data into the table
     streamRecsCollection.insert(MongoDBObject("uid" -> uid,
       "recs" -> streamRecs.map(x => MongoDBObject("mid" -> x._1, "score" -> x._2))))
   }
