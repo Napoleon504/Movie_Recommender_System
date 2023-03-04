@@ -13,18 +13,18 @@ import org.elasticsearch.common.transport.InetSocketTransportAddress
 import org.elasticsearch.transport.client.PreBuiltTransportClient
 
 /**
- * Movie 数据集
+ * Movie Data
  *
- * 260                                         电影ID，mid
- * Star Wars: Episode IV - A New Hope (1977)   电影名称，name
- * Princess Leia is captured and held hostage  详情描述，descri
- * 121 minutes                                 时长，timelong
- * September 21, 2004                          发行时间，issue
- * 1977                                        拍摄时间，shoot
- * English                                     语言，language
- * Action|Adventure|Sci-Fi                     类型，genres
- * Mark Hamill|Harrison Ford|Carrie Fisher     演员表，actors
- * George Lucas                                导演，directors
+ * 260                                         Movie ID, mid
+ * Star Wars: Episode IV - A New Hope (1977)   Movie Name, name
+ * Princess Leia is captured and held hostage  Description, descri
+ * 121 minutes                                 Timelong, timelong
+ * September 21, 2004                          Issue Time, issue
+ * 1977                                        Shoot Time, shoot
+ * English                                     Language, language
+ * Action|Adventure|Sci-Fi                     Genres, genres
+ * Mark Hamill|Harrison Ford|Carrie Fisher     Actors and Actresses, actors
+ * George Lucas                                Directors, directors
  *
  */
 
@@ -32,7 +32,7 @@ case class Movie(mid: Int, name: String, descri: String, timelong: String, issue
                  shoot: String, language: String, genres: String, actors: String, directors: String)
 
 /**
- * Rating数据集
+ * Rating Data
  *
  * 1,31,2.5,1260759144
  */
@@ -40,33 +40,33 @@ case class Movie(mid: Int, name: String, descri: String, timelong: String, issue
 case class Rating(uid: Int, mid: Int, score: Double, timestamp: Int)
 
 /**
- * Tag数据集
+ * Tag Data
  *
  * 15,1955,dentist,1193435061
  */
 
 case class Tag(uid: Int, mid: Int, tag: String, timestamp: Int)
 
-// 把 mongo和 es的配置封装成样例类
+// Encapsulate the configuration of mongo and es into a case class
 
 /**
  *
- * @param uri MongoDB连接
- * @param db  MongoDB数据库
+ * @param uri MongoDB connection
+ * @param db  MongoDB database
  */
 case class MongoConfig(uri:String, db:String)
 
 /**
  *
- * @param httpHosts       http主机列表，逗号分隔
- * @param transportHosts  transport主机列表
- * @param index            需要操作的索引
- * @param clustername      集群名称，默认elasticsearch
+ * @param httpHosts       http host list, comma separated
+ * @param transportHosts  transport host list
+ * @param index            Index to operate on
+ * @param clustername      cluster name, elasticsearch by default
  */
 case class ESConfig(httpHosts:String, transportHosts:String, index:String, clustername:String)
 
 object DataLoader {
-  // 定义常量
+  // Define constants
   val MOVIE_DATA_PATH = "/home/wang/Movie_Recommender_System/recommender/DataLoader/src/main/resources/movies.csv"
   val RATING_DATA_PATH = "/home/wang/Movie_Recommender_System/recommender/DataLoader/src/main/resources/ratings.csv"
   val TAG_DATA_PATH = "/home/wang/Movie_Recommender_System/recommender/DataLoader/src/main/resources/tags.csv"
@@ -87,14 +87,14 @@ object DataLoader {
       "es.index" -> "recommender",
       "es.cluster.name" -> "es-cluster"
     )
-    // 创建一个sparkConf
+    // Create a sparkConf
     val sparkConf = new SparkConf().setMaster(config("spark.cores")).setAppName("DataLoader")
 
-    // 创建一个SparkSession
+    // Create a SparkSession
     val spark = SparkSession.builder().config(sparkConf).getOrCreate()
     import spark.implicits._
 
-    // 加载数据
+    // Load data
     val movieRDD = spark.sparkContext.textFile(MOVIE_DATA_PATH)
     val movieDF = movieRDD.map(
       item => {
@@ -118,14 +118,14 @@ object DataLoader {
 
     implicit val mongoConfig = MongoConfig(config("mongo.uri"), config("mongo.db"))
 
-    // 将数据保存到MongoDB
+    // Save data to MongoDB
     storeDataInMongoDB(movieDF, ratingDF, tagDF)
 
-    // 数据预处理，把movie对应的tag信息添加进去，加一列 tag1|tag2|tag3...
+    // Data preprocess, add tag information to the movies and add a column tag1|tag2|tag3...
     import org.apache.spark.sql.functions._
 
     /*
-    数据格式:
+    Data format:
     mid, tags
     tags: tag1|tag2|tag3
      */
@@ -134,27 +134,27 @@ object DataLoader {
       .agg(concat_ws("|", collect_set($"tag")).as("tags"))
       .select("mid", "tags")
 
-    // newTag和movie做join，数据合并在一起，左外连接
+    // Join newTag and movie, left outer join
     val movieWithTagsDF = movieDF.join(newTag, Seq("mid"), "left")
 
     implicit val esConfig = ESConfig(config("es.httpHosts"), config("es.transportHosts"), config("es.index"), config("es.cluster.name"))
 
-    // 保存数据到ES
+    // Save data to ES
     storeDataInES(movieWithTagsDF)
 
     spark.stop()
   }
 
   def storeDataInMongoDB(movieDF: DataFrame, ratingDF: DataFrame, tagDF: DataFrame)(implicit mongoConfig: MongoConfig) = {
-    // 新建一个mongodb的连接
+    // Create a mongodb connection
     val mongoClient = MongoClient(MongoClientURI(mongoConfig.uri))
 
-    // 如果mongodb中已经有相应数据库，先删除
+    // If there is already a corresponding database in mongodb, delete it first
     mongoClient(mongoConfig.db)(MONGODB_MOVIE_COLLECTION).dropCollection()
     mongoClient(mongoConfig.db)(MONGODB_RATING_COLLECTION).dropCollection()
     mongoClient(mongoConfig.db)(MONGODB_TAG_COLLECTION).dropCollection()
 
-    // 将spark DF数据写进对应的mongodb表中
+    // Write the spark DF data into the corresponding mongodb table
     movieDF.write
       .option("uri", mongoConfig.uri)
       .option("collection", MONGODB_MOVIE_COLLECTION)
@@ -174,7 +174,7 @@ object DataLoader {
       .format("com.mongodb.spark.sql")
       .save()
 
-    //对数据表建索引
+    // Index the data table
     mongoClient(mongoConfig.db)(MONGODB_MOVIE_COLLECTION).createIndex(MongoDBObject("mid" -> 1))
     mongoClient(mongoConfig.db)(MONGODB_RATING_COLLECTION).createIndex(MongoDBObject("uid" -> 1))
     mongoClient(mongoConfig.db)(MONGODB_RATING_COLLECTION).createIndex(MongoDBObject("mid" -> 1))
@@ -184,10 +184,10 @@ object DataLoader {
   }
 
   def storeDataInES(movieDF: DataFrame)(implicit eSConfig: ESConfig): Unit = {
-    // 新建es配置
+    // New a ES configuration
     val settings: Settings = Settings.builder().put("cluster.name", eSConfig.clustername).build()
 
-    // 新建一个es客户端
+    // New a ES client
     val esClient = new PreBuiltTransportClient(settings)
 
     val REGEX_HOST_PORT = "(.+):(\\d+)".r // host name: any number of characters, port number: \\d+
@@ -197,7 +197,7 @@ object DataLoader {
       }
     }
 
-    // 先清理遗留的数据
+    // Clean up legacy data first
     if (esClient.admin().indices().exists(new IndicesExistsRequest(eSConfig.index))
       .actionGet()
       .isExists
@@ -205,7 +205,7 @@ object DataLoader {
       esClient.admin().indices().delete(new DeleteIndexRequest(eSConfig.index))
     }
 
-    // 构建索引
+    // Build indices
     esClient.admin().indices().create(new CreateIndexRequest(eSConfig.index))
 
     movieDF.write
