@@ -10,23 +10,23 @@ public class Application {
         String brokers = "localhost:9092";
         String zookeepers = "localhost:2181";
 
-        // 输入和输出topic
+        // Input and output topic
         String from = "log";
         String to = "recommender";
 
-        // 定义kafka streaming的配置
+        // Define kafka streaming configuration
         Properties settings = new Properties();
         settings.put(StreamsConfig.APPLICATION_ID_CONFIG, "logFilter");
         settings.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
         settings.put(StreamsConfig.ZOOKEEPER_CONNECT_CONFIG, zookeepers);
 
-        // 创建 kafka stream 配置对象
+        // Create kafka stream configuration object
         StreamsConfig config = new StreamsConfig(settings);
 
-        // 创建一个拓扑建构器
+        // Create a topology builder
         TopologyBuilder builder = new TopologyBuilder();
 
-        // 定义流处理的拓扑结构
+        // Define the topology of stream processing
         builder.addSource("SOURCE", from)
                 .addProcessor("PROCESSOR", () -> new LogProcessor(), "SOURCE")
                 .addSink("SINK", to, "PROCESSOR");
