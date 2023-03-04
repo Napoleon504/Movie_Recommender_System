@@ -5,8 +5,6 @@
 
 # build process
 
-- Due to the poor readability of github, the following steps are transferred to my [yuque](https://www.yuque.com/tsuiraku/movierecommender) for reference if necessary
-
 ## Phase 1: Overview of Project Architecture
 
 ## Phase 2: Basic environment construction
