@@ -11,6 +11,11 @@
     <modules>
         <module>recommender</module>
         <module>recommender/DataLoader</module>
+        <module>recommender/StatisticsRecommender</module>
+        <module>recommender/OfflineRecommender</module>
+        <module>recommender/OnlineRecommender</module>
+        <module>recommender/ContentRecommender</module>
+        <module>recommender/KafkaStream</module>
     </modules>
 
     <properties>

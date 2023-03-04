@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/recommender/ContenRecommender/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/ContenRecommender/src/main/scala" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/ContentRecommender/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/ContentRecommender/src/main/scala" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/DataLoader/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/DataLoader/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/KafkaStream/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/KafkaStream/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/KafkaStreaming/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/KafkaStreaming/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/OfflineRecommender/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/OfflineRecommender/src/main/scala" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/OnlineRecommender/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/OnlineRecommender/src/main/scala" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/StatisticsRecommender/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/StatisticsRecommender/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/recommender/src/main/resources" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/src/main/resources" charset="UTF-8" />
+  </component>
+</project>
