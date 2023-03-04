@@ -14,9 +14,9 @@ public class LogProcessor implements Processor<byte[], byte[]> {
 
     @Override
     public void process(byte[] dummy, byte[] line) {
-        // 把收集到的日志信息用string表示出来
+        // Express the collected log information as a string
         String input = new String(line);
-        // 根据前缀MOVIE_RATTING_PREFIX:从日志信息中提取评分数据
+        // According to the prefix "MOVIE_RATTING_PREFIX:", extract rating data from log information
         if(input.contains("MOVIE_RATING_PREFIX:")){
             System.out.println("movie rating data coming!>>>>>>>>>>>>" + input);
             input = input.split("MOVIE_RATING_PREFIX:")[1].trim();
