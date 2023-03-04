@@ -13,24 +13,24 @@ case class Rating(uid: Int, mid: Int, score: Double, timestamp: Int)
 
 case class MongoConfig(uri:String, db:String)
 
-// 定义一个基准推荐对象
+// Define a standard Recommendation case class
 case class Recommendation(mid: Int, score: Double)
 
-// 定义电影类别top10推荐对象
+// Define the top10 recommendation objects of the movie category
 case class GenresRecommendation(genres: String, recs: Seq[Recommendation])
 
 object StatisticsRecommender {
 
-  // 定义表名
+  // Define table names
   val MONGODB_MOVIE_COLLECTION = "Movie"
   val MONGODB_RATING_COLLECTION = "Rating"
 
   /*
-  统计表的名称
-  RATE_MORE_MOVIES：热门电影
-  RATE_MORE_RECENTLY_MOVIES：近期热门电影
-  AVERAGE_MOVIES：平均评分统计
-  GENRES_TOP_MOVIES：按类别top统计
+  Names of tables
+  RATE_MORE_MOVIES：Hot Movies
+  RATE_MORE_RECENTLY_MOVIES：Recent Hot Movies
+  AVERAGE_MOVIES：Average Rating Statistics
+  GENRES_TOP_MOVIES：Top Statistics by Genre
    */
   val RATE_MORE_MOVIES = "RateMoreMovies"
   val RATE_MORE_RECENTLY_MOVIES = "RateMoreRecentlyMovies"
@@ -43,22 +43,22 @@ object StatisticsRecommender {
       "mongo.uri" -> "mongodb://localhost:27017/recommender",
       "mongo.db" -> "recommender"
     )
-    // 创建一个sparkConf
+    // Create a sparkConf
     val sparkConf = new SparkConf().setMaster(config("spark.cores")).setAppName("StatisticsRecommender")
 
-    // 创建一个SparkSession
+    // Create a SparkSession
     val spark = SparkSession.builder().config(sparkConf).getOrCreate()
     import spark.implicits._
 
     implicit val mongoConfig = MongoConfig(config("mongo.uri"), config("mongo.db"))
 
-    // 从mongodb加载数据
+    // Load data from mongodb
     val ratingDF = spark.read
       .option("uri", mongoConfig.uri)
       .option("collection", MONGODB_RATING_COLLECTION)
       .format("com.mongodb.spark.sql")
       .load()
-      .as[Rating] // 转成case class data set
+      .as[Rating] // Transform to case class data set
       .toDF()
 
     val movieDF = spark.read
@@ -66,55 +66,55 @@ object StatisticsRecommender {
       .option("collection", MONGODB_MOVIE_COLLECTION)
       .format("com.mongodb.spark.sql")
       .load()
-      .as[Movie] // 转成case class data set
+      .as[Movie] // Transform to case class data set
       .toDF()
 
-    // 创建名为rating的临时表
+    // Create a temporary table named rating
     ratingDF.createOrReplaceTempView("ratings")
 
-    // 不同的统计推荐结果
-    // 1. 历史热门电影统计：历史评分最多(mid, count)
+    // Different statistical recommendation results
+    // 1. Statistics of popular movies in history: the most rated movies in history (mid, count)
     val rateMoreMoviesDF = spark.sql("select mid, count(mid) as count from ratings group by mid")
 
-    // 把结果写入对应的mongodb表中
+    // Write the result to the corresponding mongodb table
     storeDFInMongoDB(rateMoreMoviesDF, RATE_MORE_MOVIES)
 
-    // 2. 近期热门电影统计：按照"yyyyMM"格式选取最近的评分数据，统计评分个数
-    // 创建一个日期格式化工具
+    // 2. Recent popular movie statistics: select the latest rating data according to the format of "yyyyMM", and count the number of ratings
+    // Create a date formatter
     val simpleDataFormat = new SimpleDateFormat("yyyyMM")
 
-    // 注册udf，把时间戳转换成年月格式
+    // Register udf and convert timestamp to year-month format
     spark.udf.register("changeData", (x: Int) => simpleDataFormat.format(new Date(x * 1000L)).toInt)
 
-    // 对原始数据做预处理，去除uid
+    // Preprocess the raw data and remove the uid
     val ratingOfYearMonth = spark.sql("select mid, score, changeDate(timestamp) as yearmonth from ratings")
     ratingOfYearMonth.createOrReplaceTempView("ratingOfMonth")
 
-    // 从ratingOfMonth中查找电影在各个月份的评分(mid, count, yearmonth)
+    // Find the rating of a movie in each month from ratingOfMonth (mid, count, yearmonth)
     val rateMoreRecentlyMoviesDF = spark.sql("select mid, count(mid) as count, yearmonth from ratingOfMonth group by yearmonth, mid order by yearmonth desc, count desc")
 
-    // 存入mongodb
+    // Save to mongodb
     storeDFInMongoDB(rateMoreRecentlyMoviesDF, RATE_MORE_RECENTLY_MOVIES)
 
-    // 3. 优质电影统计，统计电影的平均评分(mid, avg)
+    // 3. High-quality movie statistics, the average rating of statistical movies (mid, avg)
     val averageMoviesDF = spark.sql("select mid, avg(score) as avg from ratings group by mid")
     storeDFInMongoDB(averageMoviesDF, AVERAGE_MOVIES)
 
-    // 4. 各类别电影的Top统计
-    // 定义所有类别
+    // 4. Top statistics of movies in each genre
+    // Define all genres
     val genres = List("Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family", "Fantasy", "Foreign", "History", "Horror", "Music", "Mystery"
       , "Romance", "Science", "Tv", "Thriller", "War", "Western")
 
-    // 把平均评分加入movie表中，加一列，inner join
+    // Add the average rating to the movie table, add a column, inner join
     val movieWithScore = movieDF.join(averageMoviesDF, "mid")
 
-    // 为做笛卡尔积，把genres转成rdd
+    // For Cartesian product, convert genres to rdd
     val genresRDD = spark.sparkContext.makeRDD(genres)
 
-    // 计算类别top10，首先对类别和电影做笛卡尔积
+    // To calculate the genre top10, first do a Cartesian product of the genre and the movie
     val genresTopMoviesDF = genresRDD.cartesian(movieWithScore.rdd)
       .filter{
-        // 条件过滤，找出movie的字段genres值包含当前类别的那些
+        // Conditional filtering to find out movies whose genres value contains the current genre
         case(genre, movieRow) => movieRow.getAs[String]("genres").toLowerCase.contains(genre.toLowerCase)
       }.map{
       case(genre, movieRow) => (genre, (movieRow.getAs[Int]("mid"), movieRow.getAs[Double]("avg")))
@@ -125,7 +125,7 @@ object StatisticsRecommender {
       }
       .toDF()
 
-    // 存入mongodb
+    // Save to mongodb
     storeDFInMongoDB(genresTopMoviesDF, GENRES_TOP_MOVIES)
 
     spark.stop()
