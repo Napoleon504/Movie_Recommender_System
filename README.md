@@ -17,7 +17,7 @@ Configure Mongodb
 
 Configure Redis
 
-Configuring Elasticsearch¶
+Configuring Elasticsearch
 
 Configure Azkaban
 
