@@ -9,14 +9,13 @@
 
 ## Phase 2: Basic environment construction
 
-- Virtual machine: virtualbox
-- System: centos7
-- Tool: Finalshell
-- Host: macOS Big Sur
+- Virtual machine: VMware Workstation Pro
+- System: CentOS 7
+- Host: Lenovo Legion R9000P2021H
 
 Configure Mongodb
 
-configure redis
+Configure Redis
 
 Configuring Elasticsearch¶
 
